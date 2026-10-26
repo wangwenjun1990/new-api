@@ -1,0 +1,38 @@
+# 本地构建 + 生产部署覆盖配置。
+# Docker Compose 会自动把它合并到 docker-compose.yml 上，因此上游文件保持干净，
+# 以后同步官方代码不会因为这层改动产生冲突。
+#
+# 密码等敏感值来自同目录的 .env（已被 .gitignore 忽略，不会提交）。
+# 首次使用：docker compose build new-api && docker compose up -d
+
+services:
+  new-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: wwj-newapi:latest
+    # 只监听本机，由 Nginx/Caddy 反向代理对外提供 HTTPS。
+    # 需要用 http://虚拟机IP:3000 直接访问调试时，临时改成 "0.0.0.0:3000:3000"。
+    ports: !override
+      - "127.0.0.1:3000:3000"
+    environment:
+      SQL_DSN: postgresql://root:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD missing, create .env first}@postgres:5432/new-api
+      REDIS_CONN_STRING: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD missing, create .env first}@redis:6379
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET missing, create .env first}
+      NODE_NAME: ${NODE_NAME:-new-api-node-1}
+      TZ: ${TZ:-Asia/Shanghai}
+      # 配好 HTTPS 后取消下面两行的注释，域名换成你自己的。
+      # 两者必须同时启用，否则程序启动时直接报错退出。
+      # SESSION_COOKIE_SECURE: "true"
+      # SESSION_COOKIE_TRUSTED_URL: https://your.domain.com
+
+  postgres:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD missing, create .env first}
+
+  redis:
+    # 单值配置项会被覆盖，不会和主文件里的 --requirepass 123456 叠加。
+    command:
+      - redis-server
+      - --requirepass
+      - ${REDIS_PASSWORD:?REDIS_PASSWORD missing, create .env first}
